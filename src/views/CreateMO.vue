@@ -4,14 +4,14 @@
     <p class="subtitle">Create MO from a verified Sales Order</p>
 
     <div class="card">
-      <label>Sales Order (sent for engineering review)</label>
+      <label>Approved Sales Order</label>
       <select v-model="selectedOrderId" @change="onOrderSelected">
         <option disabled value="">Select order…</option>
         <option v-for="o in pendingOrders" :key="o.id" :value="o.id">
           {{ o.order_no }} — {{ o.customers?.customer_name }}
         </option>
       </select>
-      <p v-if="pendingOrders.length === 0" class="hint">No orders currently awaiting engineering review.</p>
+      <p v-if="pendingOrders.length === 0" class="hint">No approved sales orders need manufacturing orders.</p>
     </div>
 
     <div v-if="selectedOrder" class="card">
@@ -82,9 +82,8 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from "vue";
+import { ref, reactive, onMounted } from "vue";
 import { supabase } from "@/lib/supabase";
-import PageHeader from "@/components/PageHeader.vue";
 
 const pendingOrders = ref([]);
 const selectedOrderId = ref("");
@@ -107,7 +106,7 @@ async function loadPendingOrders() {
   const { data } = await supabase
     .from("sales_orders")
     .select("*, customers(customer_name)")
-    .eq("status", "SENT_TO_ENG")
+    .eq("status", "IN_PROGRESS")
     .order("order_date", { ascending: false });
   pendingOrders.value = data ?? [];
 }
@@ -145,7 +144,7 @@ function onItemSelected() {
   form.part_number = item.part_number;
   form.part_name = item.part_name;
   form.quantity = item.quantity;
-  form.mo_no = `MO-${selectedOrder.value.order_no.replace("SO-", "")}`;
+  form.mo_no = `MO-${selectedOrder.value.order_no.replace(/^SO-/, "")}-${item.part_number}-${item.id.slice(0, 8)}`;
   form.remarks = "Manufacture according to approved customer drawing and specification.";
   formError.value = null;
 }
@@ -160,6 +159,7 @@ async function createMO() {
     part_number: form.part_number,
     part_name: form.part_name,
     quantity: form.quantity,
+    status: "DEVELOPMENT",
     remarks: form.remarks || null,
   });
   saving.value = false;

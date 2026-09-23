@@ -90,9 +90,9 @@
 </template>
 
 <script setup>
+defineOptions({ name: "EngineeringDashboard" });
 import { reactive, ref, onMounted } from "vue";
 import { supabase } from "@/lib/supabase";
-import PageHeader from "@/components/PageHeader.vue";
 
 const loading = ref(true);
 const error = ref(null);
@@ -155,22 +155,28 @@ async function approveOrder() {
   saving.value = true;
   formError.value = null;
   const { data: { user } } = await supabase.auth.getUser();
+  if (!reviewItems.value.length) {
+    formError.value = "This sales order has no line items and cannot be approved.";
+    saving.value = false;
+    return;
+  }
 
-  // 1. Mark the order approved / in development
-  const { error: orderErr } = await supabase.from("sales_orders").update({
-    status: "IN_PROGRESS", reviewed_by: user?.id, reviewed_at: new Date().toISOString(),
-  }).eq("id", reviewing.value.id);
-  if (orderErr) { saving.value = false; formError.value = orderErr.message; return; }
+  const { data: existingMOs, error: lookupError } = await supabase
+    .from("manufacturing_orders")
+    .select("sales_order_item_id")
+    .eq("sales_order_id", reviewing.value.id);
+  if (lookupError) {
+    formError.value = `Could not check existing manufacturing orders: ${lookupError.message}`;
+    saving.value = false;
+    return;
+  }
 
-  await supabase.from("order_status_history").insert({
-    sales_order_id: reviewing.value.id, status: "IN_PROGRESS",
-    note: "Approved by Engineering" + (decisionRemarks.value ? `: ${decisionRemarks.value}` : ""),
-  });
-
-  // 2. Auto-create one Manufacturing Order per line item, status = DEVELOPMENT
+  const existingItemIds = new Set((existingMOs ?? []).map((mo) => mo.sales_order_item_id));
   for (const item of reviewItems.value) {
-    await supabase.from("manufacturing_orders").insert({
-      mo_no: `MO-${reviewing.value.order_no.replace("SO-", "")}-${item.part_number}`,
+    if (existingItemIds.has(item.id)) continue;
+    const moNo = `MO-${reviewing.value.order_no.replace(/^SO-/, "")}-${item.part_number}-${item.id.slice(0, 8)}`;
+    const { error: moError } = await supabase.from("manufacturing_orders").insert({
+      mo_no: moNo,
       sales_order_id: reviewing.value.id,
       sales_order_item_id: item.id,
       part_number: item.part_number,
@@ -178,11 +184,34 @@ async function approveOrder() {
       quantity: item.quantity,
       status: "DEVELOPMENT",
     });
+    if (moError) {
+      formError.value = `Manufacturing orders were only partly created. Retry approval to continue safely. ${moError.message}`;
+      saving.value = false;
+      return;
+    }
   }
 
+  const { data: updatedOrder, error: orderErr } = await supabase.from("sales_orders").update({
+    status: "IN_PROGRESS", reviewed_by: user?.id, reviewed_at: new Date().toISOString(),
+  }).eq("id", reviewing.value.id).eq("status", "SENT_TO_ENG").select("id").maybeSingle();
+  if (orderErr || !updatedOrder) {
+    formError.value = orderErr?.message || "This order has already been reviewed. Refresh the dashboard.";
+    saving.value = false;
+    return;
+  }
+
+  const { error: historyError } = await supabase.from("order_status_history").insert({
+    sales_order_id: reviewing.value.id, status: "IN_PROGRESS",
+    note: "Approved by Engineering" + (decisionRemarks.value ? `: ${decisionRemarks.value}` : ""),
+  });
+
   saving.value = false;
-  reviewing.value = null;
-  loadDashboard();
+  if (historyError) {
+    formError.value = `Order and manufacturing orders were approved, but the status history could not be saved: ${historyError.message}`;
+  } else {
+    reviewing.value = null;
+  }
+  await loadDashboard();
 }
 
 async function rejectOrder() {

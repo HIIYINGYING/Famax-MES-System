@@ -1,4 +1,3 @@
-```vue
 <template>
 <div class="page">
 <PageHeader title="Create New Order" subtitle="Enter order details, items, and customer drawing">
@@ -219,6 +218,15 @@ function viewDrawing(){
 async function createOrder(){
  saving.value=true;formError.value="";documentError.value="";successMsg.value="";
 
+ const items=form.items.filter(i=>i.part_number?.trim()&&i.part_name?.trim()&&Number.isInteger(i.quantity)&&i.quantity>0).map(i=>({
+  part_number:i.part_number.trim(),part_name:i.part_name.trim(),quantity:i.quantity
+ }));
+ if(items.length!==form.items.length){
+  formError.value="Complete every order line with a part number, part name, and positive whole-number quantity.";
+  saving.value=false;
+  return;
+ }
+
  const {data:order,error:orderErr}=await supabase.from("sales_orders").insert({
   customer_id:form.customer_id,order_no:form.order_no,order_date:form.order_date,
   due_date:form.due_date||null,remarks:form.remarks||null
@@ -226,13 +234,20 @@ async function createOrder(){
 
  if(orderErr){formError.value=orderErr.message;saving.value=false;return;}
 
- const items=form.items.filter(i=>i.part_number&&i.part_name&&i.quantity>0).map(i=>({
-  sales_order_id:order.id,part_number:i.part_number.trim(),part_name:i.part_name.trim(),quantity:i.quantity
- }));
+ const orderItems=items.map(i=>({...i,sales_order_id:order.id}));
 
- if(items.length){
-  const {error}=await supabase.from("sales_order_items").insert(items);
-  if(error){formError.value=error.message;saving.value=false;return;}
+ if(orderItems.length){
+  const {error}=await supabase.from("sales_order_items").insert(orderItems);
+  if(error){
+   const {data:cleanup,error:cleanupError}=await supabase.from("sales_orders").delete().eq("id",order.id).select("id").maybeSingle();
+   formError.value=cleanupError
+    ? `Order lines could not be saved (${error.message}) and the empty order could not be removed (${cleanupError.message}).`
+    : cleanup
+      ? `Order lines could not be saved. The empty order was removed. ${error.message}`
+      : `Order lines could not be saved, and the order could not be removed. ${error.message}`;
+   saving.value=false;
+   return;
+  }
  }
 
  if(pendingDrawing.value){
@@ -273,4 +288,3 @@ h3{font-size:13px;margin:8px 0}
 .upload-btn{display:inline-block;background:#f0f0f5;color:#3f51b5;padding:9px 16px;border-radius:5px;font-size:12px;cursor:pointer;font-weight:600}
 .pending{display:flex;justify-content:space-between;margin-top:8px;padding:8px;background:#f5f6ff;border:1px solid #d5d9ff;border-radius:5px;font-size:12px}
 </style>
-```

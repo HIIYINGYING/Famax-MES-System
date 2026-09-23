@@ -72,7 +72,7 @@ function statusClass(s) {
 
 async function loadItems() {
   loading.value = true;
-  const { data } = await supabase.from("iqc_inspections").select("*, partners(name)").order("inspection_date", { ascending: false });
+  const { data } = await supabase.from("iqc_inspections").select("*, partners(name)").in("status", ["PENDING", "PENDING_INSPECTION", "REINSPECT"]).order("inspection_date", { ascending: false });
   items.value = data ?? [];
   loading.value = false;
 }
@@ -84,17 +84,30 @@ function openForm(i) {
 }
 
 async function submitInspection() {
+  if (!validInspectionQuantities()) return;
   saving.value = true;
   formError.value = null;
   const { data: { user } } = await supabase.auth.getUser();
-  const { error: err } = await supabase.from("iqc_inspections").update({
+  const { data: updated, error: err } = await supabase.from("iqc_inspections").update({
     qty_accepted: form.qty_accepted, qty_rejected: form.qty_rejected,
     remarks: form.remarks, status: form.status, inspected_by: user?.id,
-  }).eq("id", selected.value.id);
+  }).eq("id", selected.value.id).select("id").maybeSingle();
   saving.value = false;
-  if (err) { formError.value = err.message; return; }
+  if (err || !updated) { formError.value = err?.message || "The inspection was not updated. Refresh and try again."; return; }
   selected.value = null;
   loadItems();
+}
+
+function validInspectionQuantities() {
+  const accepted = form.qty_accepted;
+  const rejected = form.qty_rejected;
+  const total = Number(selected.value?.quantity);
+  if (!Number.isInteger(accepted) || !Number.isInteger(rejected) || accepted < 0 || rejected < 0 ||
+      accepted + rejected !== total) {
+    formError.value = "Accepted and rejected quantities must be whole numbers that add up to the received quantity.";
+    return false;
+  }
+  return true;
 }
 
 onMounted(loadItems);

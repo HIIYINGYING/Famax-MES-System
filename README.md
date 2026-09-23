@@ -25,6 +25,13 @@ See [Vite Configuration Reference](https://vite.dev/config/).
 npm install
 ```
 
+### Supabase configuration
+
+Copy `.env.example` to `.env`, then set `VITE_SUPABASE_URL` and
+`VITE_SUPABASE_PUBLISHABLE_KEY` from your Supabase project settings. Keep `.env`
+local; it is ignored by Git. The same variables must be configured in the
+environment used to build and deploy the app.
+
 ### Compile and Hot-Reload for Development
 
 ```sh

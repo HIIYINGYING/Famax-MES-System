@@ -203,6 +203,7 @@
 </template>
 
 <script setup>
+defineOptions({ name: "MoDevelopmentView" });
 import { ref, reactive, onMounted } from "vue";
 import { supabase } from "@/lib/supabase";
 import PageHeader from "@/components/PageHeader.vue";
@@ -225,6 +226,8 @@ const form = reactive({ steps: [], materials: [], tooling: [], gauges: [] });
 const requestSaving = ref(false);
 const requestConfirmation = ref("");
 const requestedItems = ref([]);
+const originalSteps = ref([]);
+const originalRequiredItems = ref([]);
 
 const reviewingMO = ref(null);
 const viewSteps = ref([]);
@@ -282,6 +285,8 @@ async function openUpdate(mo) {
   form.materials = (itemsRes.data ?? []).filter((i) => i.category === "RAW_MATERIAL");
   form.tooling = (itemsRes.data ?? []).filter((i) => i.category === "TOOLING");
   form.gauges = (itemsRes.data ?? []).filter((i) => i.category === "GAUGE");
+  originalSteps.value = (stepsRes.data ?? []).map((s) => ({ ...s }));
+  originalRequiredItems.value = (itemsRes.data ?? []).map((i) => ({ ...i }));
   wiDocs.value = docsRes.data ?? [];
   requestConfirmation.value = "";
   await loadRequestedItems();
@@ -307,10 +312,19 @@ async function sendRequestsToSCM() {
     requestConfirmation.value = "Add at least one required item first.";
     return;
   }
+  if (candidates.some((item) => !Number.isInteger(item.quantity) || item.quantity <= 0)) {
+    requestConfirmation.value = "Every requested item needs a positive whole-number quantity.";
+    return;
+  }
 
   // Skip items already requested for this MO
   const alreadyRequested = new Set(requestedItems.value.map((r) => r.inventory_item_id));
-  const newRows = candidates
+  const combined = new Map();
+  for (const item of candidates) {
+    const existing = combined.get(item.inventory_item_id);
+    combined.set(item.inventory_item_id, { ...item, quantity: (existing?.quantity ?? 0) + item.quantity });
+  }
+  const newRows = [...combined.values()]
     .filter((c) => !alreadyRequested.has(c.inventory_item_id))
     .map((c) => ({
       inventory_item_id: c.inventory_item_id,
@@ -371,27 +385,64 @@ async function submitForReview() {
   saving.value = true;
   formError.value = null;
 
-  await supabase.from("mo_process_steps").delete().eq("manufacturing_order_id", editing.value.id);
   const stepRows = form.steps.filter((s) => s.process_name).map((s, i) => ({
+    id: s.id,
     manufacturing_order_id: editing.value.id, step_no: i + 1,
     process_name: s.process_name, process_image_url: s.process_image_url || null, remarks: s.remarks || null,
   }));
-  if (stepRows.length) await supabase.from("mo_process_steps").insert(stepRows);
-
-  await supabase.from("mo_required_items").delete().eq("manufacturing_order_id", editing.value.id);
   const reqRows = [
     ...form.materials.filter((m) => m.inventory_item_id).map((m) => ({ ...m, category: "RAW_MATERIAL" })),
     ...form.tooling.filter((m) => m.inventory_item_id).map((m) => ({ ...m, category: "TOOLING" })),
     ...form.gauges.filter((m) => m.inventory_item_id).map((m) => ({ ...m, category: "GAUGE" })),
-  ].map((r) => ({ manufacturing_order_id: editing.value.id, category: r.category, inventory_item_id: r.inventory_item_id, quantity: r.quantity }));
-  if (reqRows.length) await supabase.from("mo_required_items").insert(reqRows);
+  ].map((r) => ({ id: r.id, manufacturing_order_id: editing.value.id, category: r.category, inventory_item_id: r.inventory_item_id, quantity: r.quantity }));
 
-  const { error: err } = await supabase.from("manufacturing_orders").update({ status: "FINAL_REVIEW" }).eq("id", editing.value.id);
+  if (stepRows.length === 0 || form.steps.some((step) => !step.process_name?.trim())) {
+    saving.value = false;
+    formError.value = "Add at least one process step and complete every step name before submitting for review.";
+    return;
+  }
+  const allRequirements = [...form.materials, ...form.tooling, ...form.gauges];
+  if (allRequirements.some((item) => !item.inventory_item_id || !Number.isInteger(item.quantity) || item.quantity <= 0)) {
+    saving.value = false;
+    formError.value = "Complete or remove each required item row and enter a positive whole-number quantity.";
+    return;
+  }
+
+  const stepsError = await saveReplacement(
+    "mo_process_steps", originalSteps.value, stepRows,
+  );
+  if (stepsError) { saving.value = false; formError.value = `Process steps were not fully saved: ${stepsError}`; return; }
+
+  const itemsError = await saveReplacement(
+    "mo_required_items", originalRequiredItems.value, reqRows,
+  );
+  if (itemsError) { saving.value = false; formError.value = `Required items were not fully saved: ${itemsError}`; return; }
+
+  const { error: err } = await supabase.from("manufacturing_orders").update({ status: "FINAL_REVIEW" }).eq("id", editing.value.id).select("id").single();
   saving.value = false;
   if (err) { formError.value = err.message; return; }
 
   editing.value = null;
   loadMOs();
+}
+
+async function saveReplacement(table, originalRows, rows) {
+  const keptIds = new Set(rows.map((row) => row.id).filter(Boolean));
+  for (const row of rows) {
+    const payload = { ...row };
+    delete payload.id;
+    const result = row.id
+      ? await supabase.from(table).update(payload).eq("id", row.id).select("id").single()
+      : await supabase.from(table).insert(payload).select("id").single();
+    if (result.error) return result.error.message;
+    if (!row.id && result.data?.id) row.id = result.data.id;
+  }
+
+  for (const removed of originalRows.filter((row) => !keptIds.has(row.id))) {
+    const { error: deleteError } = await supabase.from(table).delete().eq("id", removed.id).select("id").single();
+    if (deleteError) return deleteError.message;
+  }
+  return null;
 }
 
 async function openReview(mo) {

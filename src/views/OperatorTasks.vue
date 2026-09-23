@@ -234,7 +234,7 @@ async function startSetup() {
     actual_setup_start: new Date().toISOString(),
     checklist_materials_ready: true, checklist_tooling_ready: true,
     checklist_gauges_ready: true, checklist_safety_ready: true,
-  }).eq("id", selected.value.id);
+  }).eq("id", selected.value.id).select("id").single();
   saving.value = false;
   if (err) { formError.value = err.message; return; }
   await refreshSelected();
@@ -246,7 +246,7 @@ async function startProduction() {
     status: "IN_PROGRESS",
     actual_setup_end: new Date().toISOString(),
     actual_start: new Date().toISOString(),
-  }).eq("id", selected.value.id);
+  }).eq("id", selected.value.id).select("id").single();
   saving.value = false;
   if (err) { formError.value = err.message; return; }
   await refreshSelected();
@@ -254,7 +254,7 @@ async function startProduction() {
 
 async function updateCycleTime() {
   saving.value = true;
-  const { error: err } = await supabase.from("process_plan_steps").update({ actual_cycle_minutes: cycleTime.value }).eq("id", selected.value.id);
+  const { error: err } = await supabase.from("process_plan_steps").update({ actual_cycle_minutes: cycleTime.value }).eq("id", selected.value.id).select("id").single();
   saving.value = false;
   if (err) formError.value = err.message;
 }
@@ -286,7 +286,7 @@ async function submitToolingRequest() {
 
 async function stopProduction() {
   saving.value = true;
-  const { error: err } = await supabase.from("process_plan_steps").update({ status: "STOPPED" }).eq("id", selected.value.id);
+  const { error: err } = await supabase.from("process_plan_steps").update({ status: "STOPPED" }).eq("id", selected.value.id).select("id").single();
   saving.value = false;
   if (err) { formError.value = err.message; return; }
   await refreshSelected();
@@ -297,10 +297,10 @@ async function resumeProduction() {
   saving.value = true;
   const { error: err } = await supabase.from("process_plan_steps").update({
     status: "IN_PROGRESS",
-    qty_produced: stopForm.qty_produced,
-    qty_rejected: stopForm.qty_rejected,
+    qty_produced: (selected.value.qty_produced ?? 0) + stopForm.qty_produced,
+    qty_rejected: (selected.value.qty_rejected ?? 0) + stopForm.qty_rejected,
     reject_reason: stopForm.reject_reason || null,
-  }).eq("id", selected.value.id);
+  }).eq("id", selected.value.id).select("id").single();
   saving.value = false;
   if (err) { formError.value = err.message; return; }
   await refreshSelected();
@@ -317,12 +317,12 @@ async function completeTask() {
   const { error: err } = await supabase.from("process_plan_steps").update({
     status: "COMPLETED",
     actual_end: new Date().toISOString(),
-    qty_produced: stopForm.qty_produced,
-    qty_rejected: stopForm.qty_rejected,
+    qty_produced: (selected.value.qty_produced ?? 0) + stopForm.qty_produced,
+    qty_rejected: (selected.value.qty_rejected ?? 0) + stopForm.qty_rejected,
     reject_reason: stopForm.reject_reason || null,
     machine_counter_start: stopForm.machine_counter_start,
     machine_counter_end: stopForm.machine_counter_end,
-  }).eq("id", selected.value.id);
+  }).eq("id", selected.value.id).select("id").single();
   saving.value = false;
   if (err) { formError.value = err.message; return; }
   await refreshSelected();
@@ -330,12 +330,13 @@ async function completeTask() {
 }
 
 async function refreshSelected() {
-  const { data } = await supabase
+  const { data, error: refreshError } = await supabase
     .from("process_plan_steps")
     .select("*, machines(name), process_plans(order_no, part_name, quantity)")
     .eq("id", selected.value.id)
     .single();
-  if (data) selected.value = data;
+  if (refreshError) formError.value = refreshError.message;
+  else if (data) selected.value = data;
   loadTasks();
 }
 
