@@ -48,6 +48,7 @@
 </template>
 
 <script setup>
+defineOptions({ name: "LoginPage" });
 import { ref } from "vue";
 import { useRouter } from "vue-router";
 import { supabase } from "@/lib/supabase";
@@ -110,76 +111,3 @@ async function handleLogin() {
   }
 }
 </script>
-
-<style scoped>
-
-.login-page {
-  height: 100vh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: #f2f2f2;
-}
-
-.login-card {
-  background: #fff;
-  padding: 32px;
-  border-radius: 8px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
-  width: 320px;
-  text-align: center;
-}
-
-.logo {
-  height: 40px;
-  margin-bottom: 8px;
-}
-
-h2 {
-  font-size: 15px;
-  margin-bottom: 24px;
-}
-
-form {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  text-align: left;
-}
-
-label {
-  font-size: 12px;
-  color: #666;
-  margin-top: 8px;
-}
-
-input {
-  padding: 8px;
-  border: 1px solid #ccc;
-  border-radius: 4px;
-  font-size: 13px;
-}
-
-button {
-  margin-top: 20px;
-  padding: 10px;
-  background: #37474f;
-  color: white;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 14px;
-}
-
-button:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.error {
-  color: #c62828;
-  font-size: 12px;
-  margin-top: 8px;
-}
-
-</style>

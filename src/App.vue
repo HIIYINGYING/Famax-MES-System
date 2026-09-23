@@ -3,10 +3,11 @@
   <RouterView v-if="route.meta.public" />
 
   <div v-else class="layout">
-    <Sidebar :role="role" @logout="handleLogout" />
+    <div v-if="sidebarOpen" class="sidebar-scrim" @click="sidebarOpen = false"></div>
+    <Sidebar :role="role" :open="sidebarOpen" @close="sidebarOpen = false" @logout="handleLogout" />
 
     <div class="main">
-      <Topbar :userName="userName" :department="role" :unreadCount="unreadCount" />
+      <Topbar :title="pageTitle" :userName="userName" :department="roleLabels[role] || 'Workspace'" @toggle-sidebar="sidebarOpen = !sidebarOpen" />
       <div class="content">
         <RouterView />
       </div>
@@ -15,7 +16,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, watch } from "vue";
+import { computed, ref, onMounted, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import Sidebar from "@/components/Sidebar.vue";
 import Topbar from "@/components/Topbar.vue";
@@ -26,7 +27,70 @@ const router = useRouter();
 
 const role = ref(null);
 const userName = ref("");
-const unreadCount = ref(0);
+const sidebarOpen = ref(false);
+
+const roleLabels = {
+  ADMIN: "Administrator",
+  BD: "Business Development",
+  ENG: "Engineering",
+  SCM: "Supply Chain",
+  MANAGEMENT: "Management",
+  PRODUCTION_PLANNER: "Production Planning",
+  OPERATOR: "Production Operator",
+  QC: "Quality Control",
+};
+const pageLabels = {
+  dashboard: "Dashboard",
+  "ceo-dashboard": "Executive Overview",
+  "create-order": "Create Sales Order",
+  "create-mo": "Create Manufacturing Order",
+  customers: "Customer Management",
+  "sales-orders": "Sales Orders",
+  "manufacturing-orders": "Manufacturing Orders",
+  "mo-development": "Manufacturing Order Development",
+  "eng-documents": "Engineering Documents",
+  "raw-material": "Raw Material",
+  tooling: "Tooling",
+  gauge: "Gauge Management",
+  procurement: "Procurement",
+  "my-requests": "My Requests",
+  status: "Order Status",
+  "user-management": "User Management",
+  suppliers: "Supplier List",
+  subcons: "Subcontractors",
+  machines: "Machine List",
+  documents: "Document List",
+  "system-log": "System Log",
+  "process-plan": "Process Plan",
+  "pp-process-plan": "Production Planning",
+  "subcon-request": "Subcontractor Requests",
+  "machine-schedule": "Machine Schedule",
+  "machine-report": "Machine Report",
+  "my-tasks": "My Production Tasks",
+  "qaqc-incoming": "Incoming Inspection",
+  "qaqc-inprocess": "In Process Inspection",
+  "qaqc-outgoing": "Outgoing Inspection",
+  ncr: "Non-Conformance Reports",
+  "inspection-history": "Inspection History",
+};
+const dashboardTitles = {
+  ADMIN: "Administrator Overview",
+  BD: "Business Development Dashboard",
+  ENG: "Engineering Dashboard",
+  SCM: "Supply Chain Dashboard",
+  MANAGEMENT: "Production Dashboard",
+  PRODUCTION_PLANNER: "Production Planner Dashboard",
+  OPERATOR: "My Production Tasks",
+  QC: "Quality Dashboard",
+};
+const pageTitle = computed(() => {
+  if (route.name === "dashboard") return dashboardTitles[role.value] || "MES Dashboard";
+  if (pageLabels[route.name]) return pageLabels[route.name];
+  return String(route.name || "MES Workspace")
+    .split("-")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+});
 
 async function loadProfile() {
   const { data: { user } } = await supabase.auth.getUser();
@@ -55,43 +119,10 @@ watch(
   }
 );
 
+watch(() => route.fullPath, () => { sidebarOpen.value = false; });
+
 async function handleLogout() {
   await supabase.auth.signOut();
   router.push({ name: "login" });
 }
 </script>
-
-<style>
-html, body {
-  height: 100%;
-  margin: 0;
-  overflow: hidden;
-}
-
-* {
-  box-sizing: border-box;
-}
-
-body {
-  margin: 0;
-  font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
-}
-
-.layout {
-  display: flex;
-  height: 100vh;
-}
-
-.main {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.content {
-  flex: 1;
-  overflow-y: auto;
-  background: #f7f7f9;
-}
-</style>

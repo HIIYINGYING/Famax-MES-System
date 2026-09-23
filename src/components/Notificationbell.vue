@@ -1,7 +1,9 @@
 <template>
   <div class="bell-wrap">
     <button class="bell" @click="toggleOpen" aria-label="Notifications">
-      🔔
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" />
+      </svg>
       <span v-if="unreadCount > 0" class="badge">{{ unreadCount > 9 ? '9+' : unreadCount }}</span>
     </button>
 
@@ -24,6 +26,7 @@
 </template>
 
 <script setup>
+defineOptions({ name: "NotificationBell" });
 import { ref, computed, onMounted, onBeforeUnmount } from "vue";
 import { supabase } from "@/lib/supabase";
 
@@ -93,13 +96,21 @@ onBeforeUnmount(() => {
   border: none;
   background: none;
   cursor: pointer;
-  font-size: 16px;
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border: 1px solid #e5eaf1;
+  border-radius: 9px;
+  color: #56677e;
+  background: #fff;
 }
+.bell svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.7; }
 .badge {
   position: absolute;
   top: -4px;
   right: -6px;
-  background: #e53935;
+  background: #c34450;
   color: white;
   border-radius: 50%;
   font-size: 10px;

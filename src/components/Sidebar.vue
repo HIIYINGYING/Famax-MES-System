@@ -1,37 +1,46 @@
 <template>
-  <aside class="sidebar">
+  <aside class="sidebar" :class="{ 'is-open': open }">
     <div class="brand">
-      <img src="/famax-logo.png" alt="FAMAX" class="logo" />
-      <span>FAMAX<br />MES SYSTEM</span>
+      <div class="brand-logo"><img src="/famax-logo.png" alt="" class="logo" /></div>
+      <div class="brand-copy"><strong>FAMAX</strong><span>Manufacturing execution</span></div>
     </div>
 
-    <nav>
-      <RouterLink
-        v-for="item in menuItems"
-        :key="item.path"
-        :to="item.path"
-        class="nav-item"
-        active-class="active"
-      >
-        <span class="icon">{{ item.icon }}</span>
-        <span>{{ item.label }}</span>
-      </RouterLink>
+    <nav aria-label="Primary navigation">
+      <section v-for="section in menuSections" :key="section.title" class="nav-section">
+        <h2>{{ section.title }}</h2>
+        <RouterLink
+          v-for="item in section.items"
+          :key="item.path"
+          :to="item.path"
+          class="nav-item"
+          active-class="active"
+          @click="emit('close')"
+        >
+          <span class="icon" aria-hidden="true">{{ item.label.slice(0, 1) }}</span>
+          <span>{{ item.label }}</span>
+        </RouterLink>
+      </section>
     </nav>
 
-    <button class="logout" @click="$emit('logout')">
-      ⎋ Logout
-    </button>
+    <div class="sidebar-footer">
+      <div class="workspace-label"><span class="status-dot"></span> MES Workspace</div>
+      <button class="logout" @click="emit('logout')">
+        <span class="logout-icon" aria-hidden="true">↗</span> Sign out
+      </button>
+    </div>
   </aside>
 </template>
 
 <script setup>
+defineOptions({ name: "MesSidebar" });
 import { computed } from "vue";
 
 const props = defineProps({
-  role: { type: String, required: true }, // "BD" | "ENG" | "SCM" | "ADMIN"
+  role: { type: String, default: "" }, // "BD" | "ENG" | "SCM" | "ADMIN"
+  open: { type: Boolean, default: false },
 });
 
-defineEmits(["logout"]);
+const emit = defineEmits(["logout", "close"]);
 
 // Menus per role, matching the sidebars seen in the design
 const MENUS = {
@@ -118,83 +127,27 @@ const MENUS = {
 };
 
 const menuItems = computed(() => MENUS[props.role] || []);
+
+function sectionFor(path) {
+  if (path === "/dashboard" || path === "/ceo-dashboard") return "Overview";
+  if (["/customers", "/sales-orders", "/sales-orders/create", "/status"].includes(path)) return "Sales & Orders";
+  if (["/raw-material", "/tooling", "/gauge", "/procurement", "/suppliers", "/subcons"].includes(path)) return "Supply Chain";
+  if (["/qaqc/incoming", "/qaqc/inprocess", "/qaqc/outgoing", "/ncr", "/inspection-history"].includes(path)) return "Quality";
+  if (["/user-management", "/documents", "/system-log"].includes(path)) return "Administration";
+  return "Operations";
+}
+
+const menuSections = computed(() => {
+  const sections = [];
+  for (const item of menuItems.value) {
+    const title = sectionFor(item.path);
+    let section = sections.find((group) => group.title === title);
+    if (!section) {
+      section = { title, items: [] };
+      sections.push(section);
+    }
+    section.items.push(item);
+  }
+  return sections;
+});
 </script>
-
-<style scoped>
-.sidebar {
-  display: flex;
-  flex-direction: column;
-  width: 200px;
-  height: 100vh;
-  background: #ffffff;
-  border-right: 1px solid #e2e2e2;
-  padding: 16px 0;
-  flex-shrink: 0;
-  overflow: hidden;
-}
-
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 16px 16px;
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 1.1;
-  border-bottom: 1px solid #eee;
-}
-
-.logo {
-  height: 26px;
-}
-
-nav {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  padding-top: 12px;
-  overflow-y: auto;
-  min-height: 0;
-}
-
-.nav-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 16px;
-  font-size: 13px;
-  color: #555;
-  text-decoration: none;
-}
-
-.nav-item:hover {
-  background: #f5f5f5;
-}
-
-.nav-item.active {
-  background: #e8edff;
-  color: #3f51b5;
-  font-weight: 600;
-  border-right: 3px solid #3f51b5;
-}
-
-.icon {
-  width: 18px;
-  text-align: center;
-}
-
-.logout {
-  margin: 12px 16px 0;
-  padding: 8px;
-  background: #607d8b;
-  color: white;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 13px;
-}
-
-.logout:hover {
-  background: #546e7a;
-}
-</style>

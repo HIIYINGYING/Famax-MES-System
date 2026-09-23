@@ -1,44 +1,46 @@
 <template>
   <header class="topbar">
-
-    <div>
-      <h3>FAMAX Manufacturing Execution System</h3>
+    <div class="topbar-left">
+      <button class="menu-toggle" type="button" aria-label="Open navigation" @click="emit('toggle-sidebar')">
+        <span></span><span></span><span></span>
+      </button>
+      <div class="page-context">
+        <div class="breadcrumb"><span>FAMAX MES</span><span class="breadcrumb-separator">/</span><span>Workspace</span></div>
+        <h1>{{ title }}</h1>
+      </div>
     </div>
 
     <div class="topbar-right">
-
       <NotificationBell />
-
-      <div class="user">
+      <div class="topbar-divider"></div>
+      <div class="user-profile">
         <div class="avatar">
           {{ initials }}
         </div>
-
-        <div>
-          <strong>{{ userName }}</strong>
-          <small>{{ department }}</small>
+        <div class="user-copy">
+          <strong>{{ userName || "MES User" }}</strong>
+          <small>{{ department || "Workspace" }}</small>
         </div>
       </div>
-
     </div>
-
   </header>
 </template>
 
 <script setup>
+defineOptions({ name: "MesTopbar" });
 import { computed } from "vue";
-import NotificationBell from "@/components/NotificationBell.vue";
+import NotificationBell from "@/components/Notificationbell.vue";
 
 const props = defineProps({
-  userName: { type: String, default: "Admin User" },
-  department: { type: String, default: "Management" }, // "BD" / "ENG" / "SCM" / "Management"
-  unreadCount: { type: Number, default: 0 },
+  title: { type: String, default: "Dashboard" },
+  userName: { type: String, default: "MES User" },
+  department: { type: String, default: "Workspace" },
 });
 
-defineEmits(["open-notifications"]);
+const emit = defineEmits(["toggle-sidebar"]);
 
 const initials = computed(() =>
-  props.userName
+  (props.userName || "MES User")
     .split(" ")
     .map((w) => w[0])
     .join("")
@@ -46,74 +48,3 @@ const initials = computed(() =>
     .slice(0, 2)
 );
 </script>
-
-<style scoped>
-.topbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 20px;
-  background: #ffffff;
-  border-bottom: 1px solid #e2e2e2;
-}
-
-.topbar h3 {
-  margin: 0;
-  font-size: 15px;
-  font-weight: 600;
-}
-
-.topbar-right {
-  display: flex;
-  align-items: center;
-  gap: 20px;
-}
-
-.notification {
-  position: relative;
-  cursor: pointer;
-  font-size: 16px;
-}
-
-.badge {
-  position: absolute;
-  top: -6px;
-  right: -8px;
-  background: #e53935;
-  color: white;
-  border-radius: 50%;
-  font-size: 10px;
-  padding: 1px 5px;
-  line-height: 1;
-}
-
-.user {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.avatar {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  background: #3f51b5;
-  color: white;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.user div strong {
-  display: block;
-  font-size: 13px;
-}
-
-.user div small {
-  display: block;
-  font-size: 11px;
-  color: #888;
-}
-</style>
