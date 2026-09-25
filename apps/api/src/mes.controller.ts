@@ -75,6 +75,7 @@ export class MesController {
   @Post("manufacturing-orders/:id/operator-action") operatorAction(@Param("id", ParseUUIDPipe) id: string, @Body() body: OperatorActionDto, @Actor() actor: string, @MesRole() role: string) { if (!["OPERATOR", "ADMIN"].includes(role)) throw new ForbiddenException("Operator access is required to update production tasks."); return this.mes.recordOperatorAction(id, body, actor); }
   @Get("customers") customers() { return this.mes.listCustomers(); }
   @Post("customers") createCustomer(@Body() body: CreateCustomerDto, @Actor() actor: string) { return this.mes.createCustomer(body, actor); }
+  @Patch("customers/:id") updateCustomer(@Param("id", ParseUUIDPipe) id: string, @Body() body: CreateCustomerDto, @Actor() actor: string) { return this.mes.updateCustomer(id, body, actor); }
   @Get("sales-orders") salesOrders() { return this.mes.listSalesOrders(); }
   @Post("sales-orders") createSalesOrder(@Body() body: CreateSalesOrderDto, @Actor() actor: string) { return this.mes.createSalesOrder(body, actor); }
   @Patch("sales-orders/:id/status") updateSalesOrder(@Param("id", ParseUUIDPipe) id: string, @Body() body: UpdateSalesOrderStatusDto, @Actor() actor: string) { return this.mes.updateSalesOrderStatus(id, body.status, actor); }

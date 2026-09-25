@@ -19,6 +19,14 @@ export class MesService {
     await log.info("Customer created", { actor, id: created.id, code: created.code });
     return created;
   }
+  async updateCustomer(id: string, input: { name: string; email?: string; phone?: string; address?: string }, actor: string) {
+    const name = input.name.trim();
+    if (!name) throw new BadRequestException("Customer name is required.");
+    const [updated] = await this.database().update(customers).set({ name, email: input.email?.trim() || null, phone: input.phone?.trim() || null, address: input.address?.trim() || null, updatedAt: new Date() }).where(eq(customers.id, id)).returning();
+    if (!updated) throw new BadRequestException("Customer was not found.");
+    await log.info("Customer details updated", { actor, id, code: updated.code });
+    return updated;
+  }
   async listSalesOrders() {
     const database = this.database();
     const orders = await database.select({ id: salesOrders.id, orderNumber: salesOrders.orderNumber, customerId: salesOrders.customerId, customerName: customers.name, customerReference: salesOrders.customerReference, requiredDate: salesOrders.requiredDate, status: salesOrders.status, currency: salesOrders.currency, notes: salesOrders.notes, createdAt: salesOrders.createdAt }).from(salesOrders).leftJoin(customers, eq(salesOrders.customerId, customers.id)).orderBy(desc(salesOrders.createdAt)).limit(250);
