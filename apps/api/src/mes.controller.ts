@@ -33,6 +33,7 @@ class CreateSalesOrderDto {
   @IsInt() @Min(1) quantity!: number;
   @IsOptional() @IsString() @MaxLength(2000) notes?: string;
 }
+class UpdateSalesOrderStatusDto { @IsIn(["approved", "cancelled"]) status!: "approved" | "cancelled"; }
 const resourceNames = ["manufacturingOrders", "inventoryItems", "procurementRequests", "qualityInspections", "machines"] as const;
 
 @Controller()
@@ -44,6 +45,7 @@ export class MesController {
   @Post("customers") createCustomer(@Body() body: CreateCustomerDto, @Actor() actor: string) { return this.mes.createCustomer(body, actor); }
   @Get("sales-orders") salesOrders() { return this.mes.listSalesOrders(); }
   @Post("sales-orders") createSalesOrder(@Body() body: CreateSalesOrderDto, @Actor() actor: string) { return this.mes.createSalesOrder(body, actor); }
+  @Patch("sales-orders/:id/status") updateSalesOrder(@Param("id", ParseUUIDPipe) id: string, @Body() body: UpdateSalesOrderStatusDto, @Actor() actor: string) { return this.mes.updateSalesOrderStatus(id, body.status, actor); }
   @Get(":resource") list(@Param("resource") resource: string, @Query("limit") limit?: string) {
     if (!resourceNames.includes(resource as ResourceName)) throw new BadRequestException(`Unknown MES resource: ${resource}.`);
     const parsedLimit = limit === undefined ? 100 : Number(limit);

@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Activity, Bell, Boxes, BriefcaseBusiness, Building2, CalendarDays, Check, ChevronDown, ClipboardCheck, ClipboardList, Cog, FileText, Gauge, HardHat, LayoutDashboard, LogOut, Menu, Package, PackageSearch, Plus, Search, Settings2, ShieldAlert, Truck, Users, Wrench } from "lucide-react";
+import { Activity, Bell, Boxes, BriefcaseBusiness, Building2, CalendarDays, Check, ChevronDown, ClipboardCheck, ClipboardList, Cog, FileText, Gauge, HardHat, LayoutDashboard, LogOut, Menu, Package, PackageSearch, Plus, Search, Send, Settings2, ShieldAlert, Truck, Users, Wrench } from "lucide-react";
 import { authClient } from "@famax/auth/client";
 import { Button, Card, PageHeading, StatusBadge } from "@famax/ui";
 
@@ -100,9 +100,26 @@ export function ResourcePage({ path }: { path: string }) {
   const definition = definitions[path]; const router = useRouter();
   if (path === "/customers/create") return <FormPage kind="customer"/>;
   if (path === "/sales-orders/create") return <FormPage kind="order"/>;
+  if (path === "/status") return <OrderStatusPage/>;
   if (path === "/create-mo") return <FormPage kind="mo"/>;
   if (!definition) return <ResourceTable path={path}/>;
   return <ResourceTable path={path} definition={definition}/>;
+}
+
+function OrderStatusPage() {
+  const [orders, setOrders] = useState<SalesOrder[]>([]); const [filter, setFilter] = useState(""); const [error, setError] = useState(""); const [busyId, setBusyId] = useState("");
+  const load = useCallback(async () => { try { setError(""); setOrders(await apiRequest<SalesOrder[]>("/sales-orders")); } catch (cause) { setError(cause instanceof Error ? cause.message : "Unable to load sales orders."); } }, []);
+  useEffect(() => { let active = true; void apiRequest<SalesOrder[]>("/sales-orders").then(rows => { if (active) setOrders(rows); }).catch(cause => { if (active) setError(cause instanceof Error ? cause.message : "Unable to load sales orders."); }); return () => { active = false; }; }, []);
+  const filteredOrders = useMemo(() => orders.filter(order => `${order.orderNumber} ${order.customerName} ${order.customerReference} ${order.status}`.toLowerCase().includes(filter.toLowerCase())), [orders, filter]);
+  async function update(order: SalesOrder, status: "approved" | "cancelled") {
+    const action = status === "approved" ? "send this order to Engineering" : "cancel this order";
+    if (!window.confirm(`Are you sure you want to ${action}?`)) return;
+    setBusyId(order.id); setError("");
+    try { await apiRequest(`/sales-orders/${order.id}/status`, { method: "PATCH", body: JSON.stringify({ status }) }); await load(); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : "Unable to update order status."); }
+    finally { setBusyId(""); }
+  }
+  return <div className="page-stack"><PageHeading eyebrow="Business development" title="Order status" description="Review customer order progress and hand confirmed orders to Engineering."/><Card className="route-card"><div className="toolbar"><label className="search-box"><Search size={15}/><input aria-label="Search order status" placeholder="Search orders…" value={filter} onChange={event => setFilter(event.target.value)}/></label></div>{error && <div className="load-error" role="alert">{error}</div>}<div className="table-scroll"><table className="resource-table"><thead><tr><th>Order number</th><th>Customer</th><th>Part and quantity</th><th>Required date</th><th>Status</th><th>Action</th></tr></thead><tbody>{filteredOrders.map(order => <tr key={order.id}><td><strong className="table-primary">{order.orderNumber}</strong></td><td>{order.customerName || "—"}</td><td>{order.items.map(item => `${item.partNumber} · ${item.quantity}`).join(", ")}</td><td>{order.requiredDate || "—"}</td><td><StatusBadge status={order.status}/></td><td>{order.status === "pending" ? <div className="order-actions"><Button disabled={busyId === order.id} onClick={() => void update(order, "approved")}><Send size={13}/>Send to Engineering</Button><Button className="secondary" disabled={busyId === order.id} onClick={() => void update(order, "cancelled")}>Cancel</Button></div> : <span className="muted-copy">Status updates as the order progresses</span>}</td></tr>)}</tbody></table>{orders.length === 0 && !error && <div className="empty-state">No sales orders recorded yet. Create an order to begin.</div>}{orders.length > 0 && filteredOrders.length === 0 && <div className="empty-state">No orders match this search.</div>}</div></Card></div>;
 }
 
 function ResourceTable({ path, definition = { title: prettify(path), description: "Review, coordinate, and manage this area of your manufacturing operations.", noun: "record", headers: ["Reference", "Description", "Owner", "Updated", "Status"], rows: [] } }: { path: string; definition?: { title: string; description: string; noun: string; headers: string[]; rows: string[][] } }) {

@@ -38,6 +38,15 @@ export class MesService {
     await log.info("Sales order created", { actor, id: created.id, orderNumber });
     return { ...created, customerName: (await database.select({ name: customers.name }).from(customers).where(eq(customers.id, input.customerId)).then(rows => rows[0]?.name ?? "")) };
   }
+  async updateSalesOrderStatus(id: string, status: "approved" | "cancelled", actor: string) {
+    const database = this.database();
+    const [current] = await database.select({ status: salesOrders.status }).from(salesOrders).where(eq(salesOrders.id, id)).limit(1);
+    if (!current) throw new BadRequestException("Sales order was not found.");
+    if (current.status !== "pending") throw new BadRequestException("Only a pending sales order can be sent for engineering review or cancelled.");
+    const [updated] = await database.update(salesOrders).set({ status, updatedAt: new Date() }).where(eq(salesOrders.id, id)).returning();
+    await log.info("Sales order status changed", { actor, id, status });
+    return updated;
+  }
   async createWorkOrder(input: { orderNumber: string; partNumber: string; quantity: number; plannedStart?: string; plannedFinish?: string; priority?: string; salesOrderId?: string; notes?: string }, actor: string) {
     if (!Number.isInteger(input.quantity) || input.quantity < 1 || input.quantity > 1_000_000) throw new BadRequestException("Quantity must be a whole number between 1 and 1,000,000.");
     const normalized = { ...input, orderNumber: input.orderNumber.trim(), partNumber: input.partNumber.trim() };
