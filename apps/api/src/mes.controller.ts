@@ -1,11 +1,12 @@
-import { BadRequestException, Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Query, UseGuards } from "@nestjs/common";
+import { BadRequestException, Body, Controller, ForbiddenException, Get, Param, ParseUUIDPipe, Patch, Post, Query, UseGuards } from "@nestjs/common";
 import { IsDateString, IsEmail, IsIn, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min, MinLength } from "class-validator";
 import type { FastifyRequest } from "fastify";
 import { createParamDecorator, ExecutionContext } from "@nestjs/common";
-import { MesService, type ResourceName } from "./mes.service";
+import { MesService } from "./mes.service";
 import { SessionGuard } from "./session.guard";
 
 const Actor = createParamDecorator((_data: unknown, context: ExecutionContext) => ((context.switchToHttp().getRequest<FastifyRequest & { user?: { id: string } }>()).user?.id ?? "unknown"));
+const MesRole = createParamDecorator((_data: unknown, context: ExecutionContext) => ((context.switchToHttp().getRequest<FastifyRequest & { user?: { mesRole?: string } }>()).user?.mesRole ?? ""));
 class CreateWorkOrderDto {
   @IsString() @MinLength(2) @MaxLength(60) orderNumber!: string;
   @IsString() @MinLength(1) @MaxLength(100) partNumber!: string;
@@ -34,22 +35,56 @@ class CreateSalesOrderDto {
   @IsOptional() @IsString() @MaxLength(2000) notes?: string;
 }
 class UpdateSalesOrderStatusDto { @IsIn(["approved", "cancelled"]) status!: "approved" | "cancelled"; }
-const resourceNames = ["manufacturingOrders", "inventoryItems", "procurementRequests", "qualityInspections", "machines"] as const;
+class OperatorActionDto {
+  @IsIn(["accept", "setup_started", "production_started", "cycle_time_updated", "production_stopped", "production_resumed", "completed"]) action!: "accept" | "setup_started" | "production_started" | "cycle_time_updated" | "production_stopped" | "production_resumed" | "completed";
+  @IsOptional() @IsInt() @Min(0) @Max(1_000_000) quantity?: number;
+  @IsOptional() @IsInt() @Min(0) @Max(1_000_000) rejectedQuantity?: number;
+  @IsOptional() @IsInt() @Min(1) @Max(86400) cycleTimeSeconds?: number;
+  @IsOptional() @IsString() @MaxLength(1000) reason?: string;
+}
+class CreateProcurementDto {
+  @IsString() @MinLength(1) @MaxLength(500) description!: string;
+  @IsInt() @Min(1) @Max(1_000_000) quantity!: number;
+  @IsOptional() @IsDateString() requiredDate?: string;
+  @IsOptional() @IsString() @MaxLength(200) supplierName?: string;
+}
+class UpdateProcurementStatusDto { @IsIn(["in_progress", "approved", "completed"]) status!: "in_progress" | "approved" | "completed"; }
+class CreateInspectionDto {
+  @IsIn(["IQC", "IPQC", "OQC"]) kind!: "IQC" | "IPQC" | "OQC";
+  @IsString() @MinLength(1) @MaxLength(100) partNumber!: string;
+  @IsOptional() @IsString() @MaxLength(100) lotNumber?: string;
+  @IsInt() @Min(1) @Max(1_000_000) quantityInspected!: number;
+  @IsOptional() @IsUUID() manufacturingOrderId?: string;
+}
+class InspectionOutcomeDto {
+  @IsIn(["pass", "fail"]) result!: "pass" | "fail";
+  @IsInt() @Min(0) @Max(1_000_000) quantityAccepted!: number;
+  @IsOptional() @IsString() @MaxLength(2000) findings?: string;
+}
+const resourceNames = ["manufacturingOrders", "processPlans", "inventoryItems", "procurementRequests", "machines"] as const;
 
 @Controller()
 @UseGuards(SessionGuard)
 export class MesController {
   constructor(private readonly mes: MesService) {}
   @Get("dashboard") dashboard() { return this.mes.dashboard(); }
+  @Get("qualityInspections") inspections(@Query("kind") kind: string) { if (!["IQC", "IPQC", "OQC"].includes(kind)) throw new BadRequestException("Provide kind as IQC, IPQC, or OQC."); return this.mes.listQualityInspections(kind as "IQC" | "IPQC" | "OQC"); }
+  @Post("qualityInspections") createInspection(@Body() body: CreateInspectionDto, @Actor() actor: string) { return this.mes.createQualityInspection(body, actor); }
+  @Patch("qualityInspections/:id/outcome") inspectionOutcome(@Param("id", ParseUUIDPipe) id: string, @Body() body: InspectionOutcomeDto, @Actor() actor: string) { return this.mes.recordInspectionOutcome(id, body, actor); }
+  @Get("my-tasks") tasks(@MesRole() role: string, @Actor() actor: string) { if (!["OPERATOR", "ADMIN"].includes(role)) throw new ForbiddenException("Operator access is required to view production tasks."); return this.mes.listOperatorTasks(actor); }
+  @Post("manufacturing-orders/:id/operator-action") operatorAction(@Param("id", ParseUUIDPipe) id: string, @Body() body: OperatorActionDto, @Actor() actor: string, @MesRole() role: string) { if (!["OPERATOR", "ADMIN"].includes(role)) throw new ForbiddenException("Operator access is required to update production tasks."); return this.mes.recordOperatorAction(id, body, actor); }
   @Get("customers") customers() { return this.mes.listCustomers(); }
   @Post("customers") createCustomer(@Body() body: CreateCustomerDto, @Actor() actor: string) { return this.mes.createCustomer(body, actor); }
   @Get("sales-orders") salesOrders() { return this.mes.listSalesOrders(); }
   @Post("sales-orders") createSalesOrder(@Body() body: CreateSalesOrderDto, @Actor() actor: string) { return this.mes.createSalesOrder(body, actor); }
   @Patch("sales-orders/:id/status") updateSalesOrder(@Param("id", ParseUUIDPipe) id: string, @Body() body: UpdateSalesOrderStatusDto, @Actor() actor: string) { return this.mes.updateSalesOrderStatus(id, body.status, actor); }
+  @Post("procurementRequests") createProcurement(@Body() body: CreateProcurementDto, @Actor() actor: string) { return this.mes.createProcurementRequest(body, actor); }
+  @Patch("procurementRequests/:id/status") updateProcurement(@Param("id", ParseUUIDPipe) id: string, @Body() body: UpdateProcurementStatusDto, @Actor() actor: string) { return this.mes.updateProcurementStatus(id, body.status, actor); }
   @Get(":resource") list(@Param("resource") resource: string, @Query("limit") limit?: string) {
-    if (!resourceNames.includes(resource as ResourceName)) throw new BadRequestException(`Unknown MES resource: ${resource}.`);
+    if (!(resourceNames as readonly string[]).includes(resource)) throw new BadRequestException(`Unknown MES resource: ${resource}.`);
+    const allowedResource = resource as typeof resourceNames[number];
     const parsedLimit = limit === undefined ? 100 : Number(limit);
-    return this.mes.list(resource as ResourceName, Number.isInteger(parsedLimit) && parsedLimit > 0 ? parsedLimit : 100);
+    return this.mes.list(allowedResource, Number.isInteger(parsedLimit) && parsedLimit > 0 ? parsedLimit : 100);
   }
   @Post("manufacturing-orders") create(@Body() body: CreateWorkOrderDto, @Actor() actor: string) { return this.mes.createWorkOrder(body, actor); }
   @Patch("manufacturing-orders/:id/status") update(@Param("id", ParseUUIDPipe) id: string, @Body() body: UpdateWorkOrderDto, @Actor() actor: string) { return this.mes.updateWorkOrderStatus(id, body.status, actor); }
