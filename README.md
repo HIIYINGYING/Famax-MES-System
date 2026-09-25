@@ -1,51 +1,51 @@
-# famax-mes
+# FAMAX MES
 
-This template should help get you started developing with Vue 3 in Vite.
+FAMAX MES is a manufacturing operations workspace for customer orders, production planning, shop-floor execution, inventory, procurement, and quality.
 
-## Recommended IDE Setup
+## Workspace
 
-[VS Code](https://code.visualstudio.com/) + [Vue (Official)](https://marketplace.visualstudio.com/items?itemName=Vue.volar) (and disable Vetur).
+The repository is a Bun 1.4 and Turborepo monorepo. The active applications use Next.js 16, React 19, and Tailwind CSS 4. Shared application and service code lives in `packages/`.
 
-## Recommended Browser Setup
+| App | Local URL | Purpose |
+| --- | --- | --- |
+| `apps/marketing` | `http://localhost:3001` | Product site |
+| `apps/web` | `http://localhost:3000` | Main MES workspace |
+| `apps/docs` | `http://localhost:3002` | Operations guides |
+| `apps/platform` | `http://localhost:3003` | Platform administration |
+| `apps/partner` | `http://localhost:3004` | Partner workspace |
+| `apps/api` | `http://localhost:4000` | NestJS and Fastify API |
 
-- Chromium-based browsers (Chrome, Edge, Brave, etc.):
-  - [Vue.js devtools](https://chromewebstore.google.com/detail/vuejs-devtools/nhdogjmejiglipccpnnnanhbledajbpd)
-  - [Turn on Custom Object Formatter in Chrome DevTools](http://bit.ly/object-formatters)
-- Firefox:
-  - [Vue.js devtools](https://addons.mozilla.org/en-US/firefox/addon/vue-js-devtools/)
-  - [Turn on Custom Object Formatter in Firefox DevTools](https://fxdx.dev/firefox-devtools-custom-object-formatters/)
+## Start locally
 
-## Customize configuration
+Install [Bun 1.4](https://bun.sh/docs/installation) if it is not on your machine yet. In PowerShell, the official installer is `powershell -c "irm bun.sh/install.ps1|iex"`; then open a new terminal and check `bun --version`.
 
-See [Vite Configuration Reference](https://vite.dev/config/).
-
-## Project Setup
-
-```sh
-npm install
+```powershell
+Copy-Item .env.example .env
+bun install
+bun run dev
 ```
 
-### Supabase configuration
+The workspace command starts each app and the API through Turbo. You can also run `npm run dev` after `bun install`; the root script resolves Turbo from the installed workspace binaries. Do not use `npm install` to resolve this Bun workspace.
 
-Copy `.env.example` to `.env`, then set `VITE_SUPABASE_URL` and
-`VITE_SUPABASE_PUBLISHABLE_KEY` from your Supabase project settings. Keep `.env`
-local; it is ignored by Git. The same variables must be configured in the
-environment used to build and deploy the app.
+For a fully connected local database and authentication flow, start PostgreSQL 17 with `docker compose -f infra/docker-compose.yml up -d`, configure `DATABASE_URL` and `BETTER_AUTH_SECRET` in `.env`, then generate and apply Drizzle migrations:
 
-### Compile and Hot-Reload for Development
-
-```sh
-npm run dev
+```powershell
+bun run db:generate
+bun run db:migrate
 ```
 
-### Compile and Minify for Production
+Without a database configured, the main web app opens in a local demo workspace. API health and database-backed operations report that the database is unavailable instead of returning fabricated records.
 
-```sh
-npm run build
-```
+## Services and deployment
 
-### Lint with [ESLint](https://eslint.org/)
+- Database: PostgreSQL 17 through Drizzle ORM and postgres.js (`packages/db`).
+- Authentication: Better Auth email/password with admin and organization plugins (`packages/auth`).
+- Email: Resend + React Email (`packages/email`).
+- Flags: GrowthBook with a JSON offline fallback (`packages/flags`).
+- AI: OpenRouter through the Vercel AI SDK (`packages/ai`).
+- Logs: structured logging with optional `@vigor/observability` Rootprint adapter and HTTP ingest fallback (`packages/observability`).
+- WhatsApp: opt-in only Cloud API notifications (`packages/whatsapp`).
+- CLI and MCP: `famax-mes health`, `famax-mes work-orders`, and `famax-mes mcp`; the API exposes authenticated Streamable HTTP MCP at `/api/v1/mcp`.
+- Next.js applications deploy separately to Vercel; the API and PostgreSQL service deploy on Railway using `infra/`.
 
-```sh
-npm run lint
-```
+See `.env.example` for all supported configuration. Secrets stay in local environment files and deployment secret stores; do not commit them.

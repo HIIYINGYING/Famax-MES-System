@@ -1,0 +1,14 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "ui": "tui",
+  "tasks": {
+    "build": { "dependsOn": ["^build"], "outputs": [".next/**", "!.next/cache/**", "dist/**"] },
+    "@famax/cli#build": { "outputs": [] },
+    "@famax/db#build": { "outputs": [] },
+    "dev": { "cache": false, "persistent": true },
+    "lint": { "dependsOn": ["^lint"] },
+    "check-types": { "dependsOn": ["^check-types"], "outputs": [] },
+    "db:generate": { "cache": false },
+    "db:migrate": { "cache": false }
+  }
+}

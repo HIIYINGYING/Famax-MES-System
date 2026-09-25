@@ -1,0 +1,20 @@
+"use client";
+
+import { useState, type FormEvent } from "react";
+import { useRouter } from "next/navigation";
+import { authClient } from "@famax/auth/client";
+
+export default function LoginPage() {
+  const [error, setError] = useState(""); const [pending, setPending] = useState(false); const router = useRouter();
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); setError(""); setPending(true);
+    const form = new FormData(event.currentTarget);
+    try {
+      const result = await authClient.signIn.email({ email: String(form.get("email")), password: String(form.get("password")), callbackURL: "/dashboard" });
+      if (result.error) { setError(result.error.message ?? "Unable to sign in. Check your details and try again."); return; }
+      router.replace("/dashboard"); router.refresh();
+    } catch { setError("The sign-in service is unavailable. Check your connection and try again."); }
+    finally { setPending(false); }
+  }
+  return <main className="login-page"><section className="login-card"><div className="login-brand"><span className="brand-mark">FM</span><span><strong>FAMAX</strong><small>MANUFACTURING SYSTEMS</small></span></div><div className="login-intro"><span className="eyebrow">MES WORKSPACE</span><h1>Welcome back</h1><p>Sign in to your manufacturing operations workspace.</p></div><form className="login-form" onSubmit={submit}><label>Email address<input autoComplete="username" name="email" type="email" placeholder="you@company.com" required/></label><label>Password<input autoComplete="current-password" name="password" type="password" placeholder="Enter your password" required/></label>{error && <p className="login-error" role="alert">{error}</p>}<button className="button login-submit" disabled={pending}>{pending ? "Signing in…" : "Sign in"}</button></form><p className="login-foot">Secure access for authorized FAMAX team members.</p></section><div className="login-side"><div className="login-side-copy"><span>BUILT FOR THE FLOOR</span><h2>One clear view<br/>of every operation.</h2><p>Connect customer demand, production, supply chain and quality in a single reliable workspace.</p></div><div className="login-side-foot">FAMAX Manufacturing Execution System</div></div></main>;
+}

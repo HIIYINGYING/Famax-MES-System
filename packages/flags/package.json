@@ -1,0 +1,15 @@
+{
+  "name": "@famax/flags",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@growthbook/growthbook": "^1.4.0"
+  },
+  "scripts": {
+    "check-types": "tsc --noEmit"
+  }
+}

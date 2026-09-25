@@ -8,8 +8,16 @@ pnpm-debug.log*
 lerna-debug.log*
 
 node_modules
+**/node_modules
+.turbo
+**/.next
+**/dist
+coverage
+.vercel
+.railway
 .env*
 !.env.example
+!.env.*.example
 supabase/.temp/
 supabase/.branches/
 .DS_Store

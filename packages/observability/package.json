@@ -1,0 +1,21 @@
+{
+  "name": "@famax/observability",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {},
+  "peerDependencies": {
+    "@vigor/observability": "*"
+  },
+  "peerDependenciesMeta": {
+    "@vigor/observability": {
+      "optional": true
+    }
+  },
+  "scripts": {
+    "check-types": "tsc --noEmit"
+  }
+}
