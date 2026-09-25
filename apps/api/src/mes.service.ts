@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, ServiceUnavailableException } from "@nestjs/common";
-import { and, count, desc, eq, inArray, lte } from "drizzle-orm";
+import { and, count, desc, eq, inArray, isNotNull, lte } from "drizzle-orm";
 import { customers, db, inventoryItems, machines, manufacturingOrders, processPlans, procurementRequests, qualityInspections, salesOrderItems, salesOrders, systemEvents } from "@famax/db";
 import { createLogger } from "@famax/observability";
 
@@ -31,6 +31,21 @@ export class MesService {
     const [updated] = await database.update(processPlans).set({ status, updatedAt: new Date() }).where(and(eq(processPlans.id, id), eq(processPlans.status, current.status))).returning();
     if (!updated) throw new BadRequestException("This process plan was changed by another user. Refresh and try again.");
     await log.info("Process plan status changed", { actor, id, status });
+    return updated;
+  }
+  async scheduleWorkOrder(id: string, input: { plannedStart: string; plannedFinish?: string }, actor: string) {
+    const database = this.database();
+    const [current] = await database.select({ status: manufacturingOrders.status }).from(manufacturingOrders).where(eq(manufacturingOrders.id, id)).limit(1);
+    if (!current) throw new BadRequestException("Manufacturing order was not found.");
+    if (current.status !== "pending") throw new BadRequestException("Only a pending manufacturing order can be scheduled.");
+    if (input.plannedFinish && new Date(input.plannedFinish) < new Date(input.plannedStart)) throw new BadRequestException("Planned finish must be on or after the planned start.");
+    const updated = await database.transaction(async tx => {
+      const [order] = await tx.update(manufacturingOrders).set({ status: "approved", plannedStart: input.plannedStart, plannedFinish: input.plannedFinish, updatedAt: new Date() }).where(and(eq(manufacturingOrders.id, id), eq(manufacturingOrders.status, "pending"))).returning();
+      if (!order) throw new BadRequestException("This manufacturing order was changed by another planner. Refresh and try again.");
+      await tx.insert(systemEvents).values({ actorId: actor, action: "planning.scheduled", entityType: "manufacturing_order", entityId: id, details: { plannedStart: input.plannedStart, plannedFinish: input.plannedFinish ?? null } });
+      return order;
+    });
+    await log.info("Manufacturing order scheduled", { actor, id });
     return updated;
   }
   async createCustomer(input: { name: string; email?: string; phone?: string; address?: string }, actor: string) {
@@ -134,7 +149,7 @@ export class MesService {
   }
   async listOperatorTasks(actor: string) {
     const database = this.database();
-    const orders = await database.select().from(manufacturingOrders).where(inArray(manufacturingOrders.status, ["pending", "approved", "in_progress", "on_hold"])).orderBy(desc(manufacturingOrders.updatedAt)).limit(100);
+    const orders = await database.select().from(manufacturingOrders).where(and(inArray(manufacturingOrders.status, ["pending", "approved", "in_progress", "on_hold"]), isNotNull(manufacturingOrders.plannedStart))).orderBy(desc(manufacturingOrders.updatedAt)).limit(100);
     if (!orders.length) return [];
     const events = await database.select({ entityId: systemEvents.entityId, action: systemEvents.action, actorId: systemEvents.actorId }).from(systemEvents).where(and(eq(systemEvents.entityType, "manufacturing_order"), inArray(systemEvents.entityId, orders.map(order => order.id)))).orderBy(desc(systemEvents.occurredAt));
     const latest = new Map<string, string>();
@@ -146,9 +161,10 @@ export class MesService {
     const database = this.database();
     const [current] = await database.select().from(manufacturingOrders).where(eq(manufacturingOrders.id, id)).limit(1);
     if (!current) throw new BadRequestException("Manufacturing order was not found.");
-    const transitions = { accept: ["pending"], setup_started: ["approved"], production_started: ["approved"], cycle_time_updated: ["in_progress"], production_stopped: ["in_progress"], production_resumed: ["on_hold"], completed: ["in_progress", "on_hold"] } as const;
+    const transitions = { accept: ["pending", "approved"], setup_started: ["approved"], production_started: ["approved"], cycle_time_updated: ["in_progress"], production_stopped: ["in_progress"], production_resumed: ["on_hold"], completed: ["in_progress", "on_hold"] } as const;
     if (!(transitions[input.action] as readonly string[]).includes(current.status)) throw new BadRequestException(`Action ${input.action} is not available while this order is ${current.status}.`);
     const [previousEvent] = await database.select({ action: systemEvents.action }).from(systemEvents).where(and(eq(systemEvents.entityType, "manufacturing_order"), eq(systemEvents.entityId, id))).orderBy(desc(systemEvents.occurredAt)).limit(1);
+    if (input.action === "accept" && previousEvent?.action === "operator.accept") throw new BadRequestException("This task has already been accepted.");
     if (input.action === "setup_started" && previousEvent?.action === "operator.setup_started") throw new BadRequestException("Machine setup has already been started for this order.");
     if (input.action === "production_started" && previousEvent?.action !== "operator.setup_started") throw new BadRequestException("Record the machine setup start before starting production.");
     if (["completed", "production_stopped"].includes(input.action) && (!Number.isInteger(input.quantity) || (input.quantity ?? 0) < 0)) throw new BadRequestException("Enter a valid whole-number production quantity.");
@@ -163,6 +179,7 @@ export class MesService {
       const [locked] = await tx.select().from(manufacturingOrders).where(eq(manufacturingOrders.id, id)).for("update");
       if (!locked || locked.status !== current.status) throw new BadRequestException("This work order was changed by another operator. Refresh your task list and try again.");
       const [lockedPreviousEvent] = await tx.select({ action: systemEvents.action }).from(systemEvents).where(and(eq(systemEvents.entityType, "manufacturing_order"), eq(systemEvents.entityId, id))).orderBy(desc(systemEvents.occurredAt)).limit(1);
+      if (input.action === "accept" && lockedPreviousEvent?.action === "operator.accept") throw new BadRequestException("This task has already been accepted by another operator.");
       if (input.action === "setup_started" && lockedPreviousEvent?.action === "operator.setup_started") throw new BadRequestException("Machine setup has already been started for this order.");
       if (input.action === "production_started" && lockedPreviousEvent?.action !== "operator.setup_started") throw new BadRequestException("Record the machine setup start before starting production.");
       const [order] = await tx.update(manufacturingOrders).set({ status, completedQuantity: input.action === "completed" || input.action === "production_stopped" ? input.quantity : current.completedQuantity, updatedAt: new Date() }).where(and(eq(manufacturingOrders.id, id), eq(manufacturingOrders.status, current.status))).returning();

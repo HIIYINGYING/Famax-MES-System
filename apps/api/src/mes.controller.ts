@@ -19,6 +19,10 @@ class CreateWorkOrderDto {
   @IsOptional() @IsString() @MaxLength(2000) notes?: string;
 }
 class UpdateWorkOrderDto { @IsIn(["in_progress", "on_hold", "completed", "cancelled"]) status!: "in_progress" | "on_hold" | "completed" | "cancelled"; }
+class ScheduleWorkOrderDto {
+  @IsDateString() plannedStart!: string;
+  @IsOptional() @IsDateString() plannedFinish?: string;
+}
 class CreateCustomerDto {
   @IsString() @MinLength(1) @MaxLength(200) name!: string;
   @IsOptional() @IsEmail() @MaxLength(320) email?: string;
@@ -102,5 +106,6 @@ export class MesController {
     return this.mes.list(allowedResource, Number.isInteger(parsedLimit) && parsedLimit > 0 ? parsedLimit : 100);
   }
   @Post("manufacturing-orders") create(@Body() body: CreateWorkOrderDto, @Actor() actor: string) { return this.mes.createWorkOrder(body, actor); }
+  @Patch("manufacturing-orders/:id/schedule") schedule(@Param("id", ParseUUIDPipe) id: string, @Body() body: ScheduleWorkOrderDto, @Actor() actor: string) { return this.mes.scheduleWorkOrder(id, body, actor); }
   @Patch("manufacturing-orders/:id/status") update(@Param("id", ParseUUIDPipe) id: string, @Body() body: UpdateWorkOrderDto, @Actor() actor: string) { return this.mes.updateWorkOrderStatus(id, body.status, actor); }
 }
