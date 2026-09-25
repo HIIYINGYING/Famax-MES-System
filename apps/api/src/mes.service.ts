@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, ServiceUnavailableException } from "@nestjs/common";
 import { and, count, desc, eq, inArray, isNotNull, lte } from "drizzle-orm";
-import { customers, db, inventoryItems, machines, manufacturingOrders, processPlans, procurementRequests, qualityInspections, salesOrderItems, salesOrders, systemEvents } from "@famax/db";
+import { customers, db, inventoryItems, machines, manufacturingOrders, processPlans, procurementRequests, qualityInspections, salesOrderItems, salesOrders, systemEvents, user as users } from "@famax/db";
 import { createLogger } from "@famax/observability";
 
 const log = createLogger("mes-service");
@@ -12,6 +12,14 @@ export class MesService {
   private database() { if (!process.env.DATABASE_URL) throw new ServiceUnavailableException("MES database is not configured. Set DATABASE_URL to enable live records."); return db; }
   async list(resource: ResourceName, limit = 100) { const table = tables[resource]; return this.database().select().from(table).limit(Math.min(limit, 250)); }
   async listCustomers() { return this.database().select().from(customers).orderBy(desc(customers.createdAt)).limit(250); }
+  async listUsers() { return this.database().select({ id: users.id, name: users.name, email: users.email, mesRole: users.mesRole, banned: users.banned, createdAt: users.createdAt }).from(users).orderBy(desc(users.createdAt)).limit(500); }
+  async updateUserAccess(id: string, input: { mesRole: string; banned: boolean }, actor: string) {
+    if (id === actor && (input.mesRole !== "ADMIN" || input.banned)) throw new BadRequestException("You cannot remove your own administrator access.");
+    const [updated] = await this.database().update(users).set({ mesRole: input.mesRole, banned: input.banned, updatedAt: new Date() }).where(eq(users.id, id)).returning({ id: users.id, name: users.name, email: users.email, mesRole: users.mesRole, banned: users.banned });
+    if (!updated) throw new BadRequestException("User account was not found.");
+    await log.info("MES user access updated", { actor, id, mesRole: input.mesRole, banned: input.banned });
+    return updated;
+  }
   async createProcessPlan(input: { partNumber: string; revision?: string; steps: Array<{ operation: string; workCenter: string; sequence: number }> }, actor: string) {
     const partNumber = input.partNumber.trim();
     if (!partNumber || !input.steps.length || input.steps.some(step => !step.operation.trim() || !step.workCenter.trim() || !Number.isInteger(step.sequence) || step.sequence < 1)) throw new BadRequestException("Enter a part number and a complete operation route.");

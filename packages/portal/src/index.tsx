@@ -102,6 +102,7 @@ function Field({ label, name = label.toLowerCase().replaceAll(" ", ""), placehol
 export function ResourcePage({ path }: { path: string }) {
   const definition = definitions[path]; const router = useRouter();
   if (path === "/customers") return <CustomerDirectoryPage/>;
+  if (path === "/user-management") return <UserManagementPage/>;
   if (path === "/process-plan") return <ProcessPlansPage/>;
   if (path === "/pp-process-plan") return <ProductionPlanningPage/>;
   if (path === "/customers/create") return <FormPage kind="customer"/>;
@@ -114,6 +115,15 @@ export function ResourcePage({ path }: { path: string }) {
   if (path === "/create-mo") return <FormPage kind="mo"/>;
   if (!definition) return <ResourceTable path={path}/>;
   return <ResourceTable path={path} definition={definition}/>;
+}
+
+type MesUser = { id: string; name: string; email: string; mesRole: string; banned: boolean | null; createdAt: string };
+function UserManagementPage() {
+  const [users, setUsers] = useState<MesUser[]>([]); const [drafts, setDrafts] = useState<Record<string, { mesRole: string; banned: boolean }>>({}); const [search, setSearch] = useState(""); const [error, setError] = useState(""); const [busy, setBusy] = useState(""); const [notice, setNotice] = useState("");
+  useEffect(() => { let active = true; void apiRequest<MesUser[]>("/users").then(rows => { if (active) { setUsers(rows); setDrafts(Object.fromEntries(rows.map(user => [user.id, { mesRole: user.mesRole, banned: Boolean(user.banned) }]))); } }).catch(cause => { if (active) setError(cause instanceof Error ? cause.message : "Unable to load users."); }); return () => { active = false; }; }, []);
+  const filtered = users.filter(user => `${user.name} ${user.email} ${user.mesRole}`.toLowerCase().includes(search.toLowerCase()));
+  async function save(user: MesUser) { const update = drafts[user.id]; if (!update) return; setBusy(user.id); setError(""); setNotice(""); try { const saved = await apiRequest<MesUser>(`/users/${user.id}/access`, { method: "PATCH", body: JSON.stringify(update) }); setUsers(current => current.map(row => row.id === user.id ? { ...row, ...saved } : row)); setNotice(`Access updated for ${user.email}.`); } catch (cause) { setError(cause instanceof Error ? cause.message : "Unable to update account access."); } finally { setBusy(""); } }
+  return <div className="page-stack"><PageHeading eyebrow="Administration" title="Users & access" description="Assign MES workspaces and control account access for registered users."/><Card className="route-card"><div className="toolbar"><label className="search-box"><Search size={15}/><input aria-label="Search users" placeholder="Search name, email, or role…" value={search} onChange={event => setSearch(event.target.value)}/></label></div>{error && <div className="load-error" role="alert">{error}</div>}{notice && <div className="saved-notice" role="status">{notice}</div>}<div className="table-scroll"><table className="resource-table"><thead><tr><th>User</th><th>Email</th><th>MES role</th><th>Account access</th><th>Action</th></tr></thead><tbody>{filtered.map(user => { const draft = drafts[user.id] ?? { mesRole: user.mesRole, banned: Boolean(user.banned) }; const dirty = draft.mesRole !== user.mesRole || draft.banned !== Boolean(user.banned); return <tr key={user.id}><td><strong>{user.name}</strong></td><td>{user.email}</td><td><select className="role-select" aria-label={`MES role for ${user.email}`} value={draft.mesRole} onChange={event => setDrafts(current => ({ ...current, [user.id]: { ...draft, mesRole: event.target.value } }))}>{["ADMIN", "BD", "ENG", "OPERATOR", "SCM", "PRODUCTION_PLANNER", "QC", "MANAGEMENT"].map(role => <option key={role} value={role}>{role.replaceAll("_", " ")}</option>)}</select></td><td><label className="access-toggle"><input type="checkbox" checked={!draft.banned} onChange={event => setDrafts(current => ({ ...current, [user.id]: { ...draft, banned: !event.target.checked } }))}/>{draft.banned ? "Disabled" : "Active"}</label></td><td><Button className="secondary" disabled={!dirty || busy === user.id} onClick={() => void save(user)}>{busy === user.id ? "Saving…" : "Save access"}</Button></td></tr>; })}</tbody></table>{users.length === 0 && !error && <div className="empty-state">No user accounts have registered yet.</div>}{users.length > 0 && filtered.length === 0 && <div className="empty-state">No users match this search.</div>}</div></Card></div>;
 }
 
 type ProcessPlan = { id: string; planNumber: string; partNumber: string; revision: string; status: string; steps: { operation: string; workCenter: string; sequence: number }[] };

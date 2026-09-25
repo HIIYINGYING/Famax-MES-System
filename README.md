@@ -34,6 +34,14 @@ bun run db:generate
 bun run db:migrate
 ```
 
+Register the account that should manage MES roles, then grant it administrator access once:
+
+```powershell
+bun run db:promote-admin admin@example.com
+```
+
+Sign in with that account and use **Administration → Users & access** to assign the other workspace roles. The command only changes the matching existing account; it does not create an account or change its password.
+
 Without a database configured, the main web app opens in a local demo workspace. API health and database-backed operations report that the database is unavailable instead of returning fabricated records.
 
 ## Services and deployment

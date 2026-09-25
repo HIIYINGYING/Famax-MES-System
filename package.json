@@ -12,6 +12,7 @@
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,css}\"",
     "db:generate": "turbo run db:generate --filter=@famax/db",
     "db:migrate": "turbo run db:migrate --filter=@famax/db",
+    "db:promote-admin": "bun packages/db/src/promote-admin.ts",
     "db:studio": "bun run --filter @famax/db db:studio",
     "api:dev": "turbo run dev --filter=@famax/api",
     "web:dev": "turbo run dev --filter=@famax/web"
