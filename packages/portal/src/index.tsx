@@ -21,7 +21,7 @@ function prettify(value: string) { return value.split("/").filter(Boolean).at(-1
 
 const roleRoutes: Record<string, string[]> = {
   ADMIN: ["*"], BD: ["/dashboard", "/customers", "/sales-orders", "/sales-orders/create", "/status"],
-  ENG: ["/dashboard", "/mo-development", "/eng-documents"], SCM: ["/dashboard", "/raw-material", "/tooling", "/gauge", "/procurement"],
+  ENG: ["/dashboard", "/mo-development", "/process-plan", "/eng-documents"], SCM: ["/dashboard", "/raw-material", "/tooling", "/gauge", "/procurement"],
   MANAGEMENT: ["/dashboard", "/ceo-dashboard", "/process-plan", "/qaqc/incoming", "/qaqc/inprocess", "/qaqc/outgoing", "/ncr", "/inspection-history", "/machines"],
   PRODUCTION_PLANNER: ["/dashboard", "/manufacturing-orders", "/create-mo", "/pp-process-plan", "/subcon-request", "/machines", "/machine-schedule", "/machine-report", "/process-plan"],
   OPERATOR: ["/dashboard", "/my-tasks", "/my-requests"],
@@ -102,6 +102,7 @@ function Field({ label, name = label.toLowerCase().replaceAll(" ", ""), placehol
 export function ResourcePage({ path }: { path: string }) {
   const definition = definitions[path]; const router = useRouter();
   if (path === "/customers") return <CustomerDirectoryPage/>;
+  if (path === "/process-plan") return <ProcessPlansPage/>;
   if (path === "/customers/create") return <FormPage kind="customer"/>;
   if (path === "/sales-orders/create") return <FormPage kind="order"/>;
   if (path === "/procurement/create") return <FormPage kind="procurement"/>;
@@ -112,6 +113,17 @@ export function ResourcePage({ path }: { path: string }) {
   if (path === "/create-mo") return <FormPage kind="mo"/>;
   if (!definition) return <ResourceTable path={path}/>;
   return <ResourceTable path={path} definition={definition}/>;
+}
+
+type ProcessPlan = { id: string; planNumber: string; partNumber: string; revision: string; status: string; steps: { operation: string; workCenter: string; sequence: number }[] };
+function ProcessPlansPage() {
+  const [plans, setPlans] = useState<ProcessPlan[]>([]); const [search, setSearch] = useState(""); const [creating, setCreating] = useState(false); const [error, setError] = useState(""); const [busy, setBusy] = useState("");
+  const load = useCallback(async () => { setError(""); setPlans(await apiRequest<ProcessPlan[]>("/processPlans")); }, []);
+  useEffect(() => { let active = true; void apiRequest<ProcessPlan[]>("/processPlans").then(rows => { if (active) setPlans(rows); }).catch(cause => { if (active) setError(cause instanceof Error ? cause.message : "Unable to load process plans."); }); return () => { active = false; }; }, []);
+  const filtered = plans.filter(plan => `${plan.planNumber} ${plan.partNumber} ${plan.revision} ${plan.status}`.toLowerCase().includes(search.toLowerCase()));
+  async function create(e: FormEvent<HTMLFormElement>) { e.preventDefault(); const form = e.currentTarget; const values = new FormData(form); const steps = String(values.get("steps") ?? "").split("\n").map(line => line.split("|").map(value => value.trim())).filter(parts => parts.length >= 2 && parts[0] && parts[1]).map((parts, index) => ({ operation: parts[0], workCenter: parts[1], sequence: index + 1 })); setBusy("create"); setError(""); try { await apiRequest("/processPlans", { method: "POST", body: JSON.stringify({ partNumber: values.get("partNumber"), revision: values.get("revision") || undefined, steps }) }); setCreating(false); await load(); } catch (cause) { setError(cause instanceof Error ? cause.message : "Unable to create process plan."); } finally { setBusy(""); } }
+  async function advance(plan: ProcessPlan, status: "pending" | "approved") { setBusy(plan.id); setError(""); try { await apiRequest(`/processPlans/${plan.id}/status`, { method: "PATCH", body: JSON.stringify({ status }) }); await load(); } catch (cause) { setError(cause instanceof Error ? cause.message : "Unable to update process plan."); } finally { setBusy(""); } }
+  return <div className="page-stack"><PageHeading eyebrow="Engineering" title="Process plans" description="Define an ordered manufacturing route and move it through engineering review."><Button onClick={() => setCreating(value => !value)}><Plus size={15}/>{creating ? "Close form" : "New process plan"}</Button></PageHeading>{error && <div className="load-error" role="alert">{error}</div>}{creating && <Card><form onSubmit={create}><div className="form-grid"><Field label="Part number" name="partNumber" placeholder="e.g. PH-4402"/><Field label="Revision" name="revision" placeholder="A" required={false}/><div className="field full"><label htmlFor="steps">Operations and work centers</label><textarea id="steps" name="steps" required rows={5} placeholder={"One operation per line: operation | work center\nTurning | CNC Turning\nInspection | Quality"}/><small>Each line becomes a sequenced operation in the route.</small></div></div><div className="form-footer"><Button type="submit" disabled={busy === "create"}>{busy === "create" ? "Saving…" : "Save draft plan"}</Button></div></form></Card>}<Card className="route-card"><div className="toolbar"><label className="search-box"><Search size={15}/><input aria-label="Search process plans" placeholder="Search plans…" value={search} onChange={event => setSearch(event.target.value)}/></label></div><div className="table-scroll"><table className="resource-table"><thead><tr><th>Plan</th><th>Part number</th><th>Revision</th><th>Operations</th><th>Status</th><th>Action</th></tr></thead><tbody>{filtered.map(plan => <tr key={plan.id}><td><strong className="table-primary">{plan.planNumber}</strong></td><td>{plan.partNumber}</td><td>{plan.revision}</td><td>{plan.steps.map(step => `${step.sequence}. ${step.operation} · ${step.workCenter}`).join(" → ")}</td><td><StatusBadge status={plan.status}/></td><td>{plan.status === "draft" ? <Button className="secondary" disabled={busy === plan.id} onClick={() => void advance(plan, "pending")}>Submit for review</Button> : plan.status === "pending" ? <Button disabled={busy === plan.id} onClick={() => void advance(plan, "approved")}>Approve plan</Button> : <span className="muted-copy">Released</span>}</td></tr>)}</tbody></table>{plans.length === 0 && !error && <div className="empty-state">No process plans yet. Create the engineering route for a part to begin.</div>}{plans.length > 0 && filtered.length === 0 && <div className="empty-state">No plans match this search.</div>}</div></Card></div>;
 }
 
 function CustomerDirectoryPage() {

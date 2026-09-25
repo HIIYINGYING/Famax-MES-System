@@ -1,5 +1,6 @@
 import { BadRequestException, Body, Controller, ForbiddenException, Get, Param, ParseUUIDPipe, Patch, Post, Query, UseGuards } from "@nestjs/common";
-import { IsDateString, IsEmail, IsIn, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min, MinLength } from "class-validator";
+import { ArrayMinSize, IsArray, IsDateString, IsEmail, IsIn, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min, MinLength, ValidateNested } from "class-validator";
+import { Type } from "class-transformer";
 import type { FastifyRequest } from "fastify";
 import { createParamDecorator, ExecutionContext } from "@nestjs/common";
 import { MesService } from "./mes.service";
@@ -61,6 +62,17 @@ class InspectionOutcomeDto {
   @IsInt() @Min(0) @Max(1_000_000) quantityAccepted!: number;
   @IsOptional() @IsString() @MaxLength(2000) findings?: string;
 }
+class ProcessStepDto {
+  @IsString() @MinLength(1) @MaxLength(150) operation!: string;
+  @IsString() @MinLength(1) @MaxLength(150) workCenter!: string;
+  @IsInt() @Min(1) @Max(999) sequence!: number;
+}
+class CreateProcessPlanDto {
+  @IsString() @MinLength(1) @MaxLength(100) partNumber!: string;
+  @IsOptional() @IsString() @MaxLength(20) revision?: string;
+  @IsArray() @ArrayMinSize(1) @ValidateNested({ each: true }) @Type(() => ProcessStepDto) steps!: ProcessStepDto[];
+}
+class UpdateProcessPlanStatusDto { @IsIn(["pending", "approved"]) status!: "pending" | "approved"; }
 const resourceNames = ["manufacturingOrders", "processPlans", "inventoryItems", "procurementRequests", "machines"] as const;
 
 @Controller()
@@ -71,6 +83,8 @@ export class MesController {
   @Get("qualityInspections") inspections(@Query("kind") kind: string) { if (!["IQC", "IPQC", "OQC"].includes(kind)) throw new BadRequestException("Provide kind as IQC, IPQC, or OQC."); return this.mes.listQualityInspections(kind as "IQC" | "IPQC" | "OQC"); }
   @Post("qualityInspections") createInspection(@Body() body: CreateInspectionDto, @Actor() actor: string) { return this.mes.createQualityInspection(body, actor); }
   @Patch("qualityInspections/:id/outcome") inspectionOutcome(@Param("id", ParseUUIDPipe) id: string, @Body() body: InspectionOutcomeDto, @Actor() actor: string) { return this.mes.recordInspectionOutcome(id, body, actor); }
+  @Post("processPlans") createProcessPlan(@Body() body: CreateProcessPlanDto, @Actor() actor: string) { return this.mes.createProcessPlan(body, actor); }
+  @Patch("processPlans/:id/status") updateProcessPlan(@Param("id", ParseUUIDPipe) id: string, @Body() body: UpdateProcessPlanStatusDto, @Actor() actor: string) { return this.mes.updateProcessPlanStatus(id, body.status, actor); }
   @Get("my-tasks") tasks(@MesRole() role: string, @Actor() actor: string) { if (!["OPERATOR", "ADMIN"].includes(role)) throw new ForbiddenException("Operator access is required to view production tasks."); return this.mes.listOperatorTasks(actor); }
   @Post("manufacturing-orders/:id/operator-action") operatorAction(@Param("id", ParseUUIDPipe) id: string, @Body() body: OperatorActionDto, @Actor() actor: string, @MesRole() role: string) { if (!["OPERATOR", "ADMIN"].includes(role)) throw new ForbiddenException("Operator access is required to update production tasks."); return this.mes.recordOperatorAction(id, body, actor); }
   @Get("customers") customers() { return this.mes.listCustomers(); }

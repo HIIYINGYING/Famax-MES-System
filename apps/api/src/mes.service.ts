@@ -12,6 +12,27 @@ export class MesService {
   private database() { if (!process.env.DATABASE_URL) throw new ServiceUnavailableException("MES database is not configured. Set DATABASE_URL to enable live records."); return db; }
   async list(resource: ResourceName, limit = 100) { const table = tables[resource]; return this.database().select().from(table).limit(Math.min(limit, 250)); }
   async listCustomers() { return this.database().select().from(customers).orderBy(desc(customers.createdAt)).limit(250); }
+  async createProcessPlan(input: { partNumber: string; revision?: string; steps: Array<{ operation: string; workCenter: string; sequence: number }> }, actor: string) {
+    const partNumber = input.partNumber.trim();
+    if (!partNumber || !input.steps.length || input.steps.some(step => !step.operation.trim() || !step.workCenter.trim() || !Number.isInteger(step.sequence) || step.sequence < 1)) throw new BadRequestException("Enter a part number and a complete operation route.");
+    const steps = [...input.steps].sort((a, b) => a.sequence - b.sequence);
+    if (new Set(steps.map(step => step.sequence)).size !== steps.length) throw new BadRequestException("Process sequence numbers must be unique.");
+    const planNumber = `PP-${new Date().toISOString().slice(2, 10).replaceAll("-", "")}-${crypto.randomUUID().slice(0, 6).toUpperCase()}`;
+    const [created] = await this.database().insert(processPlans).values({ planNumber, partNumber, revision: input.revision?.trim() || "A", steps, status: "draft" }).returning();
+    await log.info("Process plan created", { actor, id: created.id, planNumber });
+    return created;
+  }
+  async updateProcessPlanStatus(id: string, status: "pending" | "approved", actor: string) {
+    const database = this.database();
+    const [current] = await database.select({ status: processPlans.status }).from(processPlans).where(eq(processPlans.id, id)).limit(1);
+    if (!current) throw new BadRequestException("Process plan was not found.");
+    const allowed: Record<string, string[]> = { draft: ["pending"], pending: ["approved"] };
+    if (!allowed[current.status]?.includes(status)) throw new BadRequestException(`Cannot change a ${current.status} process plan to ${status}.`);
+    const [updated] = await database.update(processPlans).set({ status, updatedAt: new Date() }).where(and(eq(processPlans.id, id), eq(processPlans.status, current.status))).returning();
+    if (!updated) throw new BadRequestException("This process plan was changed by another user. Refresh and try again.");
+    await log.info("Process plan status changed", { actor, id, status });
+    return updated;
+  }
   async createCustomer(input: { name: string; email?: string; phone?: string; address?: string }, actor: string) {
     const name = input.name.trim();
     if (!name) throw new BadRequestException("Customer name is required.");
